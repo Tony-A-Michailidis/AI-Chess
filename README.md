@@ -1,10 +1,15 @@
 # AI-Chess
 
-Claude and Gemini play a full game of chess against each other. You type `go` and watch.
+Claude and Gemini play a full game of chess against each other. You watch — in the
+terminal, or in a browser on a proper board.
 
 A single Python script acts as referee: it owns the board, hands each model the current
 position and the exhaustive list of legal moves, and records every move for replay. The
 models never track state themselves — they get a fresh prompt every turn.
+
+`web_server.py` puts a front end on the same referee: a real board with piece
+graphics, live move list, captured material, and the retry log as it happens. It
+needs no extra packages — standard library only.
 
 **This poses no threat whatsoever to grandmaster players.** Or club players. The opening
 is usually reasonable, then things get sharp and it all gets a bit experimental. That's
@@ -22,6 +27,9 @@ half the fun.
 - **Every game is saved twice**: a `.json` with full move-by-move detail and a standard `.pgn` for any chess GUI
 - **Replay mode** steps back through a saved game move by move
 - **Mock mode** runs the entire loop with random-move engines — no API keys, no cost
+- **Web interface** — a real board in the browser, updating live as the models play,
+  with the move list, captured pieces, thinking clocks, the error log, the PGN, and an
+  archive of past games you can replay and step through. No extra dependencies.
 
 ---
 
@@ -80,22 +88,22 @@ export ANTHROPIC_API_KEY=sk-ant-...
 export GEMINI_API_KEY=AIza...
 ```
 
-That lasts for the current shell only. For something persistent, use a `.env` file:
-
-```bash
-pip install python-dotenv
-```
+That lasts for the current shell only. For something persistent, copy
+`.env.example` to `.env` and fill it in:
 
 ```
 # .env
 ANTHROPIC_API_KEY=sk-ant-...
-GEMINI_API_KEY=AIza...
+GEMINI_API_KEY=AQ...
 ```
 
-Then add `from dotenv import load_dotenv; load_dotenv()` near the top of
-`chess_arena.py`, above the engine classes.
+`chess_arena.py` reads that file on import — no `python-dotenv`, no extra install. It
+looks next to the script rather than in the current directory, so it works whatever
+directory you launch from, and anything already exported in the shell wins over the
+file.
 
-**Never commit your keys.** `.env` is already in `.gitignore`.
+**Never commit your keys.** `.env` is in `.gitignore`, and no key belongs in
+`chess_arena.py`.
 
 ---
 
@@ -124,6 +132,54 @@ python chess_arena.py --replay games/game-20260917-143000.json
 
 ---
 
+## The web interface
+
+```bash
+python web_server.py --open        # http://127.0.0.1:8000
+```
+
+Standard library only — if `chess_arena.py` runs, this runs. The same referee code plays
+the game; nothing about the game logic is duplicated.
+
+```
+chess_arena.py        the referee and the CLI
+web_server.py         HTTP + server-sent events on top of it
+web/index.html        the page
+web/static/           style.css, app.js, and the piece SVGs
+games/                saved .json and .pgn, written by both front ends
+```
+
+Start a game from the page: pick which model takes each seat (including **Mock** for a
+free dry run), set the model IDs, the move delay and the ply limit, and whether a model
+forfeits after repeated illegal moves. Then watch:
+
+- **The board** — Cburnett piece set, last move highlighted, the king's square lit up
+  when it's in check, pieces sliding as they move. `f` flips it.
+- **Player cards** — model ID, captured pieces, material edge, and a clock that runs
+  while a model is thinking.
+- **Moves** — click any move to jump the board to that position; a dot marks moves that
+  needed retries (amber) or fell back to a random legal move (red).
+- **Log** — illegal moves, API errors, rate limits and forfeits as they happen.
+- **PGN** — copy the game, or the FEN of whatever position you're looking at.
+- **Archive** — every saved game, with replay and playback controls.
+
+The game runs server-side, so the browser is only a viewer: open the page mid-game,
+close the tab and come back, or watch from a second device — everyone sees the same
+board. Arrow keys step through moves, space plays and pauses.
+
+| Flag | What it does |
+|---|---|
+| `--port N` | Port to listen on (default `8000`) |
+| `--host ADDR` | Interface to bind (default `127.0.0.1`) |
+| `--open` | Open a browser window on startup |
+| `--delay N` | Default seconds between moves (default `1.0`) |
+| `--mock` | Default both seats to the random-move engine |
+
+> **On `--host`:** it binds to localhost on purpose. Anyone who can reach the page can
+> start games that spend your API credit, so only widen it on a network you trust.
+
+---
+
 ## Options
 
 | Flag | What it does |
@@ -144,9 +200,11 @@ python chess_arena.py --replay games/game-20260917-143000.json
 Model IDs are constants at the top of `chess_arena.py`:
 
 ```python
-CLAUDE_MODEL = "claude-sonnet-5"   # "claude-opus-5" plays better and costs more
-GEMINI_MODEL = "gemini-3.8-flash"
+CLAUDE_MODEL = "claude-sonnet-5"       # "claude-opus-5" plays better and costs more
+GEMINI_MODEL = "gemini-3-flash-preview"
 ```
+
+In the web interface you can override both per game without editing anything.
 
 These move fast. If either 404s, check the
 [Anthropic models page](https://docs.claude.com/en/docs/about-claude/models) or the
@@ -194,6 +252,7 @@ the model got wrong before it landed on something legal.
 - **`ModuleNotFoundError` on a new terminal?** Run `source .venv/bin/activate` first.
 - **Cost:** each move is a few hundred input tokens and a handful of output tokens. A full game on Sonnet runs well under a dollar. Opus is several times that, and reasoning-heavy Gemini configs can surprise you — watch the first game before queuing a tournament.
 - **Gemini returning empty responses?** Reasoning tokens count against `max_output_tokens`. It's set generously, but you can raise it in `GeminiEngine.ask()`.
+- **Gemini 429 / `RESOURCE_EXHAUSTED`?** Free-tier quota is **per model, per day**, and on the stronger flash models it can be as low as 20 requests — a single game needs dozens, so it won't finish one. Switch models (`gemini-flash-lite-latest` is a roomier fallback) or enable billing on the Google Cloud project. Watch for this one: without `--forfeit-on-illegal` a rate-limited game quietly turns into random legal moves. The web UI's log names the cause explicitly.
 - **Random fallbacks distort results.** If you're actually comparing the two models, use `--forfeit-on-illegal` for a clean scoreline.
 
 ---
@@ -204,7 +263,7 @@ the model got wrong before it landed on something legal.
 - Stockfish as a benchmark opponent, or for per-move centipawn evaluation
 - Let the models write a one-line comment per move and log it alongside
 - Elo tracking across many games
-- A web UI for the replays
+- Per-move evaluation graph in the web UI, and a tournament view
 
 PRs and issues welcome.
 

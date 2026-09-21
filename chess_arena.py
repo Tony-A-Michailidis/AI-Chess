@@ -3,8 +3,14 @@
 chess_arena.py — Claude vs Gemini, hands-off.
 
     pip install chess anthropic google-genai
-    export ANTHROPIC_API_KEY=
-    export GEMINI_API_KEY=
+
+Keys come from the environment. Either export them:
+
+    export ANTHROPIC_API_KEY=...
+    export GEMINI_API_KEY=...
+
+or put them in a .env file next to this script (see .env.example), which is
+read automatically and never overrides a variable already in the environment.
 
     python chess_arena.py                 # play a game
     python chess_arena.py --mock          # dry run, no API calls, no keys needed
@@ -34,13 +40,15 @@ import chess.pgn
 
 # --- Configuration ----------------------------------------------------------
 
+HERE = Path(__file__).resolve().parent
+
 # Model IDs move fast. Check https://docs.claude.com/en/docs/about-claude/models
 # and https://ai.google.dev/gemini-api/docs/models if either of these 404s.
 CLAUDE_MODEL = "claude-sonnet-5"   # "claude-opus-5" plays better and costs more
-GEMINI_MODEL = "gemini-3.8-flash"
-
-os.environ["ANTHROPIC_API_KEY"] = "...."
-os.environ["GEMINI_API_KEY"] = "...."
+# gemini-3.8-flash is stronger but its free tier allows only 20 calls a day,
+# which is not enough for one game. "gemini-flash-lite-latest" is the cheaper
+# fallback if this one runs out of quota.
+GEMINI_MODEL = "gemini-3-flash-preview"
 
 MAX_RETRIES = 3        # illegal-move attempts before the fallback kicks in
 MOVE_DELAY = 2.0       # seconds between moves, for effect
@@ -54,6 +62,30 @@ SYSTEM_PROMPT = (
 )
 
 UCI_RE = re.compile(r"\b([a-h][1-8][a-h][1-8][qrbnQRBN]?)\b")
+
+API_KEYS = ("ANTHROPIC_API_KEY", "GEMINI_API_KEY")
+
+
+def load_env(path: Path = HERE / ".env") -> None:
+    """Read KEY=value lines from .env into the environment.
+
+    Anything already set in the real environment wins, so exporting a key still
+    overrides the file. Quotes around the value are optional; blank lines and
+    lines starting with # are skipped.
+    """
+    try:
+        text = path.read_text()
+    except OSError:
+        return
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, _, value = line.partition("=")
+        os.environ.setdefault(name.strip(), value.strip().strip("\"'"))
+
+
+load_env()
 
 
 # --- Engines ----------------------------------------------------------------
@@ -373,10 +405,11 @@ def main() -> int:
     if args.mock:
         a, b = MockEngine("Claude"), MockEngine("Gemini")
     else:
-        missing = [k for k in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY")
-                   if not os.environ.get(k)]
+        missing = [k for k in API_KEYS if not os.environ.get(k)]
         if missing:
-            print(f"Missing environment variable(s): {', '.join(missing)}")
+            print(f"Missing API key(s): {', '.join(missing)}")
+            print(f"Export them, or put them in {HERE / '.env'} "
+                  f"(see .env.example).")
             return 1
         a, b = ClaudeEngine(), GeminiEngine()
 

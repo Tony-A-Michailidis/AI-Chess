@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chess Arena</title>
+<link rel="icon" href="/static/pieces/nlt.svg">
+<link rel="stylesheet" href="/static/style.css">
+<!-- Warm the piece cache so the first move does not pop in. -->
+<link rel="preload" as="image" href="/static/pieces/klt.svg">
+<link rel="preload" as="image" href="/static/pieces/qlt.svg">
+<link rel="preload" as="image" href="/static/pieces/rlt.svg">
+<link rel="preload" as="image" href="/static/pieces/blt.svg">
+<link rel="preload" as="image" href="/static/pieces/nlt.svg">
+<link rel="preload" as="image" href="/static/pieces/plt.svg">
+<link rel="preload" as="image" href="/static/pieces/kdt.svg">
+<link rel="preload" as="image" href="/static/pieces/qdt.svg">
+<link rel="preload" as="image" href="/static/pieces/rdt.svg">
+<link rel="preload" as="image" href="/static/pieces/bdt.svg">
+<link rel="preload" as="image" href="/static/pieces/ndt.svg">
+<link rel="preload" as="image" href="/static/pieces/pdt.svg">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <img src="/static/pieces/ndt.svg" alt="" class="brand-mark">
+    <div>
+      <h1>Chess Arena</h1>
+      <p class="brand-sub" id="matchup">model versus model, hands off</p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <span class="conn" id="conn" data-state="connecting">connecting</span>
+    <button class="icon-btn" id="flip" title="Flip the board">⇅</button>
+    <button class="icon-btn" id="theme" title="Light / dark">◐</button>
+  </div>
+</header>
+
+<main class="layout">
+
+  <section class="board-col">
+    <article class="player-card" id="card-top">
+      <span class="swatch"></span>
+      <div class="who">
+        <strong class="label">—</strong>
+        <span class="model"></span>
+      </div>
+      <div class="captures"></div>
+      <div class="meta">
+        <span class="material"></span>
+        <span class="clock">0.0s</span>
+      </div>
+      <div class="thinking-bar"></div>
+    </article>
+
+    <div class="board-frame">
+      <div class="board" id="board"></div>
+      <div class="board-veil" id="veil" hidden>
+        <div class="veil-inner">
+          <p class="veil-result" id="veil-result"></p>
+          <p class="veil-term" id="veil-term"></p>
+        </div>
+      </div>
+    </div>
+
+    <article class="player-card" id="card-bottom">
+      <span class="swatch"></span>
+      <div class="who">
+        <strong class="label">—</strong>
+        <span class="model"></span>
+      </div>
+      <div class="captures"></div>
+      <div class="meta">
+        <span class="material"></span>
+        <span class="clock">0.0s</span>
+      </div>
+      <div class="thinking-bar"></div>
+    </article>
+
+    <div class="viewer" id="viewer">
+      <button class="icon-btn" data-nav="start" title="First move">⏮</button>
+      <button class="icon-btn" data-nav="prev" title="Back">◀</button>
+      <button class="icon-btn" data-nav="play" title="Play / pause">▶</button>
+      <button class="icon-btn" data-nav="next" title="Forward">▶|</button>
+      <button class="icon-btn" data-nav="end" title="Latest">⏭</button>
+      <span class="viewer-pos" id="viewer-pos">move 0</span>
+      <button class="ghost-btn" id="back-to-live" hidden>back to live</button>
+    </div>
+  </section>
+
+  <aside class="side">
+
+    <section class="panel">
+      <header class="panel-head">
+        <h2>Match</h2>
+        <span class="status-chip" id="status-chip">idle</span>
+      </header>
+
+      <div class="form">
+        <label class="field">
+          <span>White</span>
+          <select id="white"></select>
+        </label>
+        <label class="field">
+          <span>Black</span>
+          <select id="black"></select>
+        </label>
+        <label class="field wide">
+          <span>Claude model</span>
+          <input id="claude-model" type="text" spellcheck="false">
+        </label>
+        <label class="field wide">
+          <span>Gemini model</span>
+          <input id="gemini-model" type="text" spellcheck="false">
+        </label>
+        <label class="field">
+          <span>Move delay</span>
+          <span class="range-row">
+            <input id="delay" type="range" min="0" max="6" step="0.5">
+            <output id="delay-out">1.0s</output>
+          </span>
+        </label>
+        <label class="field">
+          <span>Ply limit</span>
+          <input id="max-plies" type="number" min="2" max="600" step="2">
+        </label>
+        <label class="check">
+          <input id="forfeit" type="checkbox">
+          <span>Forfeit after repeated illegal moves</span>
+        </label>
+      </div>
+
+      <div class="actions">
+        <button class="primary-btn" id="start">Start game</button>
+        <button class="ghost-btn" id="stop" disabled>Stop</button>
+      </div>
+      <p class="hint" id="hint"></p>
+    </section>
+
+    <section class="panel grow">
+      <header class="panel-head tabs" role="tablist">
+        <button class="tab is-on" data-tab="moves">Moves</button>
+        <button class="tab" data-tab="log">Log</button>
+        <button class="tab" data-tab="pgn">PGN</button>
+        <button class="tab" data-tab="archive">Archive</button>
+      </header>
+
+      <div class="tab-body" data-panel="moves">
+        <div class="movelist" id="movelist"></div>
+      </div>
+
+      <div class="tab-body" data-panel="log" hidden>
+        <div class="log" id="log"></div>
+      </div>
+
+      <div class="tab-body" data-panel="pgn" hidden>
+        <pre class="pgn" id="pgn">No game yet.</pre>
+        <div class="actions">
+          <button class="ghost-btn" id="copy-pgn">Copy PGN</button>
+          <button class="ghost-btn" id="copy-fen">Copy FEN</button>
+        </div>
+      </div>
+
+      <div class="tab-body" data-panel="archive" hidden>
+        <div class="archive" id="archive"></div>
+      </div>
+    </section>
+
+  </aside>
+</main>
+
+<footer class="credit">
+  Pieces: <a href="https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces">Cburnett</a>, CC BY-SA 3.0.
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 # Secrets — never commit these
 .env
 .env.*
+!.env.example
 *.key
 
 # Saved games
@@ -18,3 +19,4 @@ __pycache__/
 .vscode/
 .idea/
 .DS_Store
+*:Zone.Identifier
